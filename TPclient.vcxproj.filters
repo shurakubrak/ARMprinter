@@ -6,6 +6,7 @@
     <ClCompile Include="loger.cpp" />
     <ClCompile Include="utils.cpp" />
     <ClCompile Include="device.cpp" />
+    <ClCompile Include="doc_ctrl_t.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="includes">
@@ -29,6 +30,9 @@
       <Filter>includes</Filter>
     </ClInclude>
     <ClInclude Include="device.h">
+      <Filter>includes</Filter>
+    </ClInclude>
+    <ClInclude Include="doc_ctrl_t.h">
       <Filter>includes</Filter>
     </ClInclude>
   </ItemGroup>

@@ -103,12 +103,14 @@
   <ItemGroup>
     <ClCompile Include="client.cpp" />
     <ClCompile Include="device.cpp" />
+    <ClCompile Include="doc_ctrl_t.cpp" />
     <ClCompile Include="loger.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="utils.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="device.h" />
+    <ClInclude Include="doc_ctrl_t.h" />
     <ClInclude Include="includes\client.h" />
     <ClInclude Include="includes\loger.h" />
     <ClInclude Include="includes\main.h" />
