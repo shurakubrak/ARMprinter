@@ -2,16 +2,45 @@
 #include <fstream>
 #include "main.h"
 #include "loger.h"
-#include "device.h"
 #include "utils.h"
+#include "device.h"
 #include "doc_ctrl_t.h"
 
 using namespace std;
 
+struct printer_t
+{
+	doc_ctrl_t doc;
+	device_t dev;
+	client_t clt;
+};
+
 atomic<bool> Terminated(false);
+atomic<int> count_line_print(0);
+atomic<int> count_char_print(0);
+atomic<int> cmd_current(-1);
+atomic<int> order_current(-1);
+loger_t log;
+
+/*поток таймера*/
+void thread_Timer(printer_t* arg)
+{
+	while (!Terminated) {
+		if (arg->dev.m_fl_line_print)
+			if (!wait4(&arg->dev.m_fl_line_print, 2000)) {
+				arg->dev.m_fl_print_fail = true;
+				Request_3(to_string(order_current), to_string(cmd_current), 
+					count_line_print, count_char_print, 1);
+				count_line_print = 0;
+				count_char_print = 0;
+				arg->dev.m_fl_line_print = false;
+			}
+		msleep(10);
+	}
+}
 
 /*поток печати*/
-void thread_printer(doc_t* arg)
+void thread_printer(printer_t* arg)
 {
 	doc_t doc;
 	size_t pos;
@@ -23,135 +52,129 @@ void thread_printer(doc_t* arg)
 	string bottom = "";
 	bool err = false;
 
-	try
-	{
-		while (!Terminated) {
-			if (arg->ls_print_acc(&doc, acc_t::get)) {
-				CountLinePrint = 0;
-				CountCharPrint = 0;
-				OrderCurrent = atoi(doc.order_id.c_str());
-				CmdCurrent = atoi(doc.cmd_id.c_str());
-				/*колонтитулы*/
-				left_space = "";
-				for (size_t i = 0; i < doc.MarginLeft; i++)
-					left_space += " ";
+	while (!Terminated) {
+		if (arg->doc.ls_print_acc(&doc, acc_t::get)) {
+			count_line_print = 0;
+			count_char_print = 0;
+			order_current = atoi(doc.order_id.c_str());
+			cmd_current = atoi(doc.cmd_id.c_str());
+			/*колонтитулы*/
+			left_space = "";
+			for (size_t i = 0; i < doc.mergin_left; i++)
+				left_space += " ";
 
-				doc.lines.push_front(space);
-				head = left_space + "~~~~ Копия N ~~~~ Задание на пост передано " + doc.dt + " ~~~~~~~~~" + '\n';
-				head = convert(head.c_str(), "utf-8", "cp1251");
-				doc.lines.push_front(head);
+			doc.lines.push_front(space);
+			head = left_space + "~~~~ Копия N ~~~~ Задание на пост передано " + doc.dt + " ~~~~~~~~~" + '\n';
+			head = convert(head.c_str(), "utf-8", "cp1251");
+			doc.lines.push_front(head);
 
-				bottom = left_space + "~~~ Конец копии ~~~~~~ " + doc.dt + " ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" + '\n';
-				bottom = convert(bottom.c_str(), "utf-8", "cp1251");
-				doc.lines.push_back(bottom);
-				doc.lines.push_back(space); /*пустая строка ввеху копии*/
+			bottom = left_space + "~~~ Конец копии ~~~~~~ " + doc.dt + " ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" + '\n';
+			bottom = convert(bottom.c_str(), "utf-8", "cp1251");
+			doc.lines.push_back(bottom);
+			doc.lines.push_back(space); /*пустая строка ввеху копии*/
 
-				doc.line_num += 4;
+			doc.line_num += 4;
 
-				for (size_t i = 0; i < doc.copies; i++) {
-					pos = doc.lines.front().find('N');
-					if (pos != string::npos)
-						doc.lines.front().replace(pos + 1, to_string(i + 1).length(), to_string(i + 1));
-					/*печатаем*/
-					for (auto it = doc.lines.begin(); it != doc.lines.end(); it++) {
-						if (PrintDel)
-							goto PrDel;
-						while (!getUSB())
-							msleep(100);
-						if (PrintDel)
-							goto PrDel;
-						if (PrintString(*it)) {
-							CountLinePrint++;
-							CountCharPrint += LengthStrNoSpace(*it);
-							msleep(10);
-						}
-						else
-							err = true;
-					}
-
-					/*отступ между копиями*/
-					if (doc.copies - i > 1)/*кроме последней копии*/
-						for (size_t c = 0; c < doc.MarginCopy; c++) {
-							if (PrintDel)
-								goto PrDel;
-							while (!getUSB())
-								msleep(100);
-							if (PrintDel)
-								goto PrDel;
-							if (PrintString(space)) {
-								CountLinePrint++;
-								msleep(10);
-							}
-							else
-								err = true;
-						}
-				}
-				/*отступ снизу*/
-				for (size_t i = 0; i < doc.MarginCount; i++) {
-					if (PrintDel)
+			for (size_t i = 0; i < doc.copies; i++) {
+				pos = doc.lines.front().find('N');
+				if (pos != string::npos)
+					doc.lines.front().replace(pos + 1, to_string(i + 1).length(), to_string(i + 1));
+				/*печатаем*/
+				for (auto it = doc.lines.begin(); it != doc.lines.end(); it++) {
+					if (arg->clt.m_printer_del)
 						goto PrDel;
-					while (!getUSB())
+					while (!arg->dev.get_USB())
 						msleep(100);
-					if (PrintDel)
+					if (arg->clt.m_printer_del)
 						goto PrDel;
-					if (PrintString(space)) {
-						CountLinePrint++;
+					if (arg->dev.print_string(*it)) {
+						count_line_print++;
+						count_char_print += LengthStrNoSpace(*it);
 						msleep(10);
 					}
 					else
 						err = true;
 				}
 
-				if (doc.confirm)
-					LEDon(true);
-			PrDel:
-				fid = 14;
-				if (err)
-					Log.ToLog("Print error");
-				else if (PrintDel)/*отменено*/
-					Request_3(doc.order_id, doc.cmd_id, CountLinePrint, CountCharPrint, 2);
-				else/*выполнено*/
-					Request_3(doc.order_id, doc.cmd_id, CountLinePrint, CountCharPrint, 0);
-				PrintDel = false;
-				err = false;
-				CountLinePrint = 0;
-				CountCharPrint = 0;
-				doc.Clear();
+				/*отступ между копиями*/
+				if (doc.copies - i > 1)/*кроме последней копии*/
+					for (size_t c = 0; c < doc.mergin_copy; c++) {
+						if (arg->clt.m_printer_del)
+							goto PrDel;
+						while (!arg->dev.get_USB())
+							msleep(100);
+						if (arg->clt.m_printer_del)
+							goto PrDel;
+						if (arg->dev.print_string(space)) {
+							count_line_print++;
+							msleep(10);
+						}
+						else
+							err = true;
+					}
 			}
-			else
-				msleep(50);
+			/*отступ снизу*/
+			for (size_t i = 0; i < doc.mergin_count; i++) {
+				if (arg->clt.m_printer_del)
+					goto PrDel;
+				while (!arg->dev.get_USB())
+					msleep(100);
+				if (arg->clt.m_printer_del)
+					goto PrDel;
+				if (arg->dev.print_string(space)) {
+					count_line_print++;
+					msleep(10);
+				}
+				else
+					err = true;
+			}
+
+			if (doc.confirm)
+				arg->dev.led_ctrl(GP_HIGH);
+		PrDel:
+			if (err)
+				log.to_log("Print error");
+			else if (arg->clt.m_printer_del)/*отменено*/
+				Request_3(doc.order_id, doc.cmd_id, count_line_print, count_char_print, 2);
+			else/*выполнено*/
+				Request_3(doc.order_id, doc.cmd_id, count_line_print, count_char_print, 0);
+			arg->clt.m_printer_del = false;
+			err = false;
+			count_line_print = 0;
+			count_char_print = 0;
+			doc.Clear();
 		}
-	}
-	catch (const std::exception&)
-	{
-		cout << "Error print" << endl;
+		else
+			msleep(50);
 	}
 }
 
 int main()
 {
-	loger_t log;
 	log.to_log("START...");
-
-	device_t dev;
+	printer_t printer;
 	
 	//PrintCtl();
-	dev.led_ctrl(GP_HIGH);
+	printer.dev.led_ctrl(GP_HIGH);
 	msleep(300);
-	dev.led_ctrl(GP_LOW);
+	printer.dev.led_ctrl(GP_LOW);
 	string str = {7, 17, 27, 64, 27, 107, 48 };
-	client_t clt(6030, read_addr(), cb_analys);
-	if (clt.m_server_addr.empty())
+	printer.clt.m_port = 6030;
+	printer.clt.m_server_addr = read_addr();
+	printer.clt.set_analys(cb_analys);
+	if (printer.clt.m_server_addr.empty())
 	{
 		log.to_log("ip addres fail");
 		return -1;
 	}
-	clt.start_sock();
-	thread thrPrint = thread(thread_printer, nullptr);
-	thrPrint.detach();
+	printer.clt.start_sock();
+	thread thr_print = thread(thread_printer, &printer);
+	thr_print.detach();
+	thread thr_tmr = thread(thread_printer, &printer);
+	thr_tmr.detach();
 
 	Terminated = true;
-	clt.close_sock();
+	printer.clt.close_sock();
 	ssleep(1);
 	log.m_terminated = true;
 	ssleep(2);
@@ -195,7 +218,6 @@ void cb_analys(char bt, client_t* clt)
 		}
 	}
 }
-//--------------------------------------------
 
 void clt_data_parse(vector<char> message)
 {
@@ -208,9 +230,59 @@ void clt_data_parse(vector<char> message)
 		break;
 	}
 }
-//--------------------------------------------------------------
 
+void Request_1()
+{
+	char buf[] = { BEGIN_PACK,'1',SEPARATOR_PACK,'1',END_PACK };
+	buf[3] = (getUSB()) ? '1' : '2'; /*2 - нет принтера*/
+	if (fl_PrintFail)
+		buf[3] = '3'; /*ошибка принтера*/
+	sClient.Send(buf, sizeof(buf));
 
+}
+
+void Request_2()
+{
+	string pack;
+	pack += BEGIN_PACK;
+	pack += '2';
+	pack += SEPARATOR_PACK;
+	pack += to_string(cmd_current.load());
+	pack += END_PACK;
+	sClient.Send(pack.c_str(), pack.length());
+}
+
+void Request_3(string OrderCur, string CmdCur,
+	int line_num, int char_num, uint8_t status)
+{
+	string send_pack = "";
+	send_pack += (char)BEGIN_PACK;
+	send_pack += "3";
+	send_pack += (char)SEPARATOR_PACK;
+	send_pack += OrderCur;
+	send_pack += (char)SEPARATOR_PACK;
+	send_pack += CmdCur;
+	send_pack += (char)SEPARATOR_PACK;
+	send_pack += to_string(line_num);
+	send_pack += (char)SEPARATOR_PACK;
+	send_pack += to_string(char_num);
+	send_pack += (char)SEPARATOR_PACK;
+	switch (status)
+	{
+	case 0:
+		send_pack += "8";
+		break;
+	case 1:
+		send_pack += "10";
+		break;
+	case 2:
+		send_pack += "14";
+		break;
+	}
+	send_pack += (char)END_PACK;
+
+	sClient.Send(send_pack.c_str(), send_pack.length());
+}
 
 
 

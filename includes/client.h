@@ -25,7 +25,13 @@ public:
 	bool m_begin;
 	std::atomic<bool> m_is_recive;
 	std::atomic<bool> m_status;
+	std::atomic<bool> m_printer_del;
 	
+	client_t() 
+	{ 
+		m_printer_del.store(false);
+		m_status.store(false); 
+	}
 	client_t(std::function<void(char, client_t*)> analys)
 	{
 		m_status.store(false);
@@ -48,6 +54,10 @@ public:
 	int		recive_data();
 	void	add_in(std::vector<char>* msg){ls_in_acc(msg, acc_t::add);}
 	bool	get_in(std::vector<char>* msg){return ls_in_acc(msg, acc_t::get);}
+	void	set_analys(std::function<void(char, client_t*)> analys)
+	{
+		this->analys = analys;
+	}
 
 private:
 	std::mutex m_mtx_in;

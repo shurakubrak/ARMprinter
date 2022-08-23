@@ -22,3 +22,14 @@ bool doc_ctrl_t::ls_print_acc(doc_t* doc, acc_t acc)
 	}
 	return false;
 }
+
+static size_t doc_ctrl_t::length_str_no_space(std::string str)
+{
+	size_t size = 0;
+	for (size_t i = 0; i < str.length(); i++)
+		if (str[i] != ' '
+			&& str[i] != '\n'
+			&& str[i] != '\r')
+			size++;
+	return size;
+}

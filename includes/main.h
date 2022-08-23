@@ -4,6 +4,7 @@
 #include <list>
 #include "client.h"
 
+
 #define TIMER_PER_LINE		0.5
 #define SEPARATOR_PACK		0x01
 #define BEGIN_PACK			0x02
@@ -33,6 +34,12 @@ struct comd_t {
 };
 
 
+
+
 std::string read_addr();
 void cb_analys(char bt, client_t* clt);
 void clt_data_parse(std::vector<char> message);
+void Request_1();
+void Request_2();
+void Request_3(string OrderCur, string CmdCur,
+	int line_num, int char_num, uint8_t status);
