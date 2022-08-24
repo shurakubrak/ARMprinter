@@ -5,8 +5,8 @@
     <ClCompile Include="client.cpp" />
     <ClCompile Include="loger.cpp" />
     <ClCompile Include="utils.cpp" />
+    <ClCompile Include="docctrl.cpp" />
     <ClCompile Include="device.cpp" />
-    <ClCompile Include="doc_ctrl_t.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="includes">
@@ -29,10 +29,10 @@
     <ClInclude Include="includes\utils.h">
       <Filter>includes</Filter>
     </ClInclude>
-    <ClInclude Include="device.h">
+    <ClInclude Include="includes\docctrl.h">
       <Filter>includes</Filter>
     </ClInclude>
-    <ClInclude Include="doc_ctrl_t.h">
+    <ClInclude Include="includes\device.h">
       <Filter>includes</Filter>
     </ClInclude>
   </ItemGroup>

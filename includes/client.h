@@ -26,7 +26,7 @@ public:
 	std::atomic<bool> m_is_recive;
 	std::atomic<bool> m_status;
 	std::atomic<bool> m_printer_del;
-	
+		
 	client_t() 
 	{ 
 		m_printer_del.store(false);
@@ -37,7 +37,7 @@ public:
 		m_status.store(false);
 		this->analys = analys;
 	};
-	client_t(int32_t port, std::string s_addr, 
+	client_t(int16_t port, std::string s_addr, 
 			std::function<void(char, client_t*)> analys)
 	{
 		m_status.store(false);

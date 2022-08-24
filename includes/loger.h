@@ -42,7 +42,7 @@ public:
 	bool m_terminated = false;
 	loger_t();
 	void to_log(std::string valueMSG, target_log_t target = target_log_t::cons_only,
-				std::string value_buf = nullptr);
+				std::string value_buf = "");
 	bool from_log();
 
 private:

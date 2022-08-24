@@ -1,8 +1,13 @@
 #include <cstdio>
 #include <fstream>
 #include <wiringPi.h>
-#include "device.h"
-#include "utils.h"
+#include <fcntl.h>
+#include <unistd.h>
+#include <iostream>
+#include <linux/lp.h>
+#include <sys/ioctl.h>
+#include "includes/device.h"
+#include "includes/utils.h"
 
 using namespace std;
 
@@ -20,7 +25,12 @@ void device_t::led_ctrl(bool state)
 
 int device_t::key_state()
 {
-	return digitalRead(KEY_MAIN);
+	if (digitalRead(KEY_MAIN))
+	{
+		m_key_click = true;
+		return true;
+	}
+	return false;
 }
 
 int device_t::get_USB()
@@ -28,9 +38,9 @@ int device_t::get_USB()
 	bool lsu = false;
 	FILE* fpipe;
 	char c = 0;
-	char* command = "lsusb | grep 04b8:0046";
+	string command = "lsusb | grep 04b8:0046";
 
-	if (0 == (fpipe = (FILE*)popen(command, "r")))
+	if (0 == (fpipe = (FILE*)popen(command.c_str(), "r")))
 	{
 		perror("popen() failed.");
 		return false;
@@ -58,3 +68,15 @@ bool device_t::print_string(string line)
 	}
 }
 
+void device_t::print_ctrl()
+{
+	int printer = open("/dev/usb/lp0", O_RDONLY);
+	int* arg;
+	if (printer != -1) {
+		int stat = ioctl(printer, LPGETSTATUS, arg);
+		cout << "LP state: " << to_string(stat) << endl;
+		close(printer);
+	}
+	else
+		cout << "open ERROR: " + to_string(errno) << endl;
+}

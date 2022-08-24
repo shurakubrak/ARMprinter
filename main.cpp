@@ -1,47 +1,37 @@
-﻿#include <atomic>
-#include <fstream>
-#include "main.h"
-#include "loger.h"
-#include "utils.h"
-#include "device.h"
-#include "doc_ctrl_t.h"
+﻿#include <fstream>
+#include <cassert>
+#include "includes/main.h"
+#include "includes/loger.h"
+#include "includes/utils.h"
 
 using namespace std;
 
-struct printer_t
-{
-	doc_ctrl_t doc;
-	device_t dev;
-	client_t clt;
-};
-
 atomic<bool> Terminated(false);
-atomic<int> count_line_print(0);
-atomic<int> count_char_print(0);
-atomic<int> cmd_current(-1);
-atomic<int> order_current(-1);
+
 loger_t log;
 
 /*поток таймера*/
 void thread_Timer(printer_t* arg)
 {
+	assert(arg != nullptr);
 	while (!Terminated) {
 		if (arg->dev.m_fl_line_print)
 			if (!wait4(&arg->dev.m_fl_line_print, 2000)) {
 				arg->dev.m_fl_print_fail = true;
-				Request_3(to_string(order_current), to_string(cmd_current), 
-					count_line_print, count_char_print, 1);
-				count_line_print = 0;
-				count_char_print = 0;
+				request_3(arg, to_string(arg->order_current), to_string(arg->cmd_current),
+					arg->count_line_print, arg->count_char_print, 1);
+				arg->count_line_print = 0;
+				arg->count_char_print = 0;
 				arg->dev.m_fl_line_print = false;
 			}
-		msleep(10);
+		this_thread::yield();
 	}
 }
 
 /*поток печати*/
 void thread_printer(printer_t* arg)
 {
+	assert(arg != nullptr);
 	doc_t doc;
 	size_t pos;
 	string left_space = "";
@@ -53,11 +43,11 @@ void thread_printer(printer_t* arg)
 	bool err = false;
 
 	while (!Terminated) {
-		if (arg->doc.ls_print_acc(&doc, acc_t::get)) {
-			count_line_print = 0;
-			count_char_print = 0;
-			order_current = atoi(doc.order_id.c_str());
-			cmd_current = atoi(doc.cmd_id.c_str());
+		if (arg->doc.get_doc(&doc)) {
+			arg->count_line_print = 0;
+			arg->count_char_print = 0;
+			arg->order_current = atoi(doc.order_id.c_str());
+			arg->cmd_current = atoi(doc.cmd_id.c_str());
 			/*колонтитулы*/
 			left_space = "";
 			for (size_t i = 0; i < doc.mergin_left; i++)
@@ -88,8 +78,8 @@ void thread_printer(printer_t* arg)
 					if (arg->clt.m_printer_del)
 						goto PrDel;
 					if (arg->dev.print_string(*it)) {
-						count_line_print++;
-						count_char_print += LengthStrNoSpace(*it);
+						arg->count_line_print++;
+						arg->count_char_print += arg->doc.length_str_no_space(*it);
 						msleep(10);
 					}
 					else
@@ -106,7 +96,7 @@ void thread_printer(printer_t* arg)
 						if (arg->clt.m_printer_del)
 							goto PrDel;
 						if (arg->dev.print_string(space)) {
-							count_line_print++;
+							arg->count_line_print++;
 							msleep(10);
 						}
 						else
@@ -122,7 +112,7 @@ void thread_printer(printer_t* arg)
 				if (arg->clt.m_printer_del)
 					goto PrDel;
 				if (arg->dev.print_string(space)) {
-					count_line_print++;
+					arg->count_line_print++;
 					msleep(10);
 				}
 				else
@@ -135,26 +125,177 @@ void thread_printer(printer_t* arg)
 			if (err)
 				log.to_log("Print error");
 			else if (arg->clt.m_printer_del)/*отменено*/
-				Request_3(doc.order_id, doc.cmd_id, count_line_print, count_char_print, 2);
+				request_3(arg, doc.order_id, doc.cmd_id, arg->count_line_print,
+					arg->count_char_print, 2);
 			else/*выполнено*/
-				Request_3(doc.order_id, doc.cmd_id, count_line_print, count_char_print, 0);
+				request_3(arg, doc.order_id, doc.cmd_id, arg->count_line_print,
+					arg->count_char_print, 0);
 			arg->clt.m_printer_del = false;
 			err = false;
-			count_line_print = 0;
-			count_char_print = 0;
-			doc.Clear();
+			arg->count_line_print = 0;
+			arg->count_char_print = 0;
+			doc.clear();
 		}
 		else
-			msleep(50);
+			this_thread::yield();
 	}
 }
 
+/*поток разбора данных слиента*/
+void thread_clt_data_parse(printer_t* pnt)
+{
+	string str = "";
+	size_t pos = 0;
+
+	assert(pnt != nullptr);
+	vector<char> message;
+	while (!Terminated)
+	{
+		if(pnt->clt.get_in(&message))
+		switch (message[1])
+		{
+		case '1':
+			request_1(pnt);
+			break;
+
+		case '2':
+			pnt->dev.m_fl_print_fail = true;
+			pnt->doc.del_doc();
+			break;
+
+		case '3':
+			pnt->dev.m_fl_print_fail = false;
+			pnt->doc.m_document.clear();
+			/*order_id*/
+			for (size_t i = 3; i < message.size(); i++) {
+				if (message[i] != SEPARATOR_PACK && message[i] != END_PACK)
+					pnt->doc.m_document.order_id += message[i];
+				else {
+					pos = i + 1;
+					break;
+				}
+			}
+			/*cmd_id*/
+			for (size_t i = pos; i < message.size(); i++) {
+				if (message[i] != SEPARATOR_PACK && message[i] != END_PACK)
+					pnt->doc.m_document.cmd_id += message[i];
+				else {
+					pos = i + 1;
+					break;
+				}
+			}
+			/*copies*/
+			str = "";
+			for (size_t i = pos; i < message.size(); i++) {
+				if (message[i] != SEPARATOR_PACK && message[i] != END_PACK)
+					str += message[i];
+				else {
+					pos = i + 1;
+					break;
+				}
+			}
+			pnt->doc.m_document.copies = atoi(str.c_str());
+			/*confirm*/
+			str = "";
+			for (size_t i = pos; i < message.size(); i++) {
+				if (message[i] != SEPARATOR_PACK && message[i] != END_PACK)
+					str += message[i];
+				else {
+					pos = i + 1;
+					break;
+				}
+			}
+			pnt->doc.m_document.confirm = atob(str);
+			/*lines number*/
+			str = "";
+			for (size_t i = pos; i < message.size(); i++) {
+				if (message[i] != SEPARATOR_PACK && message[i] != END_PACK)
+					str += message[i];
+				else {
+					pos = i + 1;
+					break;
+				}
+			}
+			pnt->doc.m_document.line_num = atoi(str.c_str());
+			/*MarginCount - отступ снизу*/
+			str = "";
+			for (size_t i = pos; i < message.size(); i++) {
+				if (message[i] != SEPARATOR_PACK && message[i] != END_PACK)
+					str += message[i];
+				else {
+					pos = i + 1;
+					break;
+				}
+			}
+			pnt->doc.m_document.mergin_count = atoi(str.c_str());
+			/*MarginLeft - отступ слевау*/
+			str = "";
+			for (size_t i = pos; i < message.size(); i++) {
+				if (message[i] != SEPARATOR_PACK)
+					str += message[i];
+				else {
+					pos = i + 1;
+					break;
+				}
+			}
+			pnt->doc.m_document.mergin_left = atoi(str.c_str());
+			/*MarginCopy - пропуск между копиями*/
+			str = "";
+			for (size_t i = pos; i < message.size(); i++) {
+				if (message[i] != SEPARATOR_PACK)
+					str += message[i];
+				else {
+					pos = i + 1;
+					break;
+				}
+			}
+			pnt->doc.m_document.mergin_copy = atoi(str.c_str());
+			/*MaxNumSimbol - кол. символов в строке*/
+			str = "";
+			for (size_t i = pos; i < message.size(); i++) {
+				if (message[i] != SEPARATOR_PACK)
+					str += message[i];
+				else {
+					pos = i + 1;
+					break;
+				}
+			}
+			pnt->doc.m_document.max_num_simbol = atoi(str.c_str());
+			/*date-time*/
+			for (size_t i = pos; i < message.size(); i++) {
+				if (message[i] != SEPARATOR_PACK && message[i] != END_PACK)
+					pnt->doc.m_document.dt += message[i];
+				else {
+					pos = i + 1;
+					break;
+				}
+			}
+			break;
+
+		case '4':
+			if (pnt->doc.m_document_begin) {
+				for (int i = 3; i < message.size() - 1; i++)
+					str += message[i];
+				pnt->doc.m_document.lines.push_back(str);
+				if (pnt->doc.m_document.lines.size() >= pnt->doc.m_document.line_num) {
+					pnt->doc.add_doc(&pnt->doc.m_document);
+					pnt->doc.m_document_begin = false;
+					pnt->doc.m_document.clear();
+				}
+			}
+			break;
+		}
+		this_thread::yield();
+	}
+}
+
+/**********************************************************/
 int main()
 {
 	log.to_log("START...");
 	printer_t printer;
 	
-	//PrintCtl();
+	printer.dev.print_ctrl();
 	printer.dev.led_ctrl(GP_HIGH);
 	msleep(300);
 	printer.dev.led_ctrl(GP_LOW);
@@ -172,6 +313,32 @@ int main()
 	thr_print.detach();
 	thread thr_tmr = thread(thread_printer, &printer);
 	thr_tmr.detach();
+	thread thr_parse = thread(thread_clt_data_parse, &printer);
+	thr_parse.detach();
+
+	uint64_t tm = get_time_ms();
+	request_2(&printer);
+	while (!Terminated)
+	{
+		if (printer.dev.key_state() && printer.dev.m_key_click) {
+			printer.dev.led_ctrl(false);
+			request_2(&printer);
+			printer.dev.m_key_click = false;
+		}
+
+		/*контроль принтера*/
+		if (printer.dev.m_fl_print_fail) {
+			if (!printer.dev.get_USB())
+				printer.dev.m_fl_print_fail = false;
+		}
+
+		/*маяк*/
+		if (get_time_ms() - tm > BLINK_TIME) {
+			request_1(&printer);
+			tm = get_time_ms();
+		}
+		msleep(50);
+	}
 
 	Terminated = true;
 	printer.clt.close_sock();
@@ -188,9 +355,14 @@ string read_addr()
 	char buf[20];
 
 	ifstream f;
-	f.open("/home/orangepi/settngs.txt");
-	getline(f, addr);
-	return addr;
+	f.open("./settings.txt");
+	if (f.is_open())
+	{
+		getline(f, addr);
+		f.close();
+		return addr;
+	}
+	return "";
 }
 
 
@@ -209,7 +381,7 @@ void cb_analys(char bt, client_t* clt)
 		case END_PACK:
 			clt->m_begin = false;
 			clt->m_message.push_back(bt);
-			clt_data_parse(clt->m_message);
+			clt->add_in(&clt->m_message);
 			break;
 		default:
 			if (clt->m_begin) 
@@ -219,40 +391,27 @@ void cb_analys(char bt, client_t* clt)
 	}
 }
 
-void clt_data_parse(vector<char> message)
-{
-	string str = "";
-	size_t pos = 0;
-
-	switch (message[1])
-	{
-	case '1':
-		break;
-	}
-}
-
-void Request_1()
+void request_1(printer_t* pnt)
 {
 	char buf[] = { BEGIN_PACK,'1',SEPARATOR_PACK,'1',END_PACK };
-	buf[3] = (getUSB()) ? '1' : '2'; /*2 - нет принтера*/
-	if (fl_PrintFail)
+	buf[3] = (pnt->dev.get_USB()) ? '1' : '2'; /*2 - нет принтера*/
+	if (pnt->dev.m_fl_print_fail)
 		buf[3] = '3'; /*ошибка принтера*/
-	sClient.Send(buf, sizeof(buf));
-
+	pnt->clt.send_data(buf, sizeof(buf));
 }
 
-void Request_2()
+void request_2(printer_t* pnt)
 {
 	string pack;
 	pack += BEGIN_PACK;
 	pack += '2';
 	pack += SEPARATOR_PACK;
-	pack += to_string(cmd_current.load());
+	pack += to_string(pnt->cmd_current.load());
 	pack += END_PACK;
-	sClient.Send(pack.c_str(), pack.length());
+	pnt->clt.send_data(pack.c_str(), pack.length());
 }
 
-void Request_3(string OrderCur, string CmdCur,
+void request_3(printer_t* pnt, string OrderCur, string CmdCur,
 	int line_num, int char_num, uint8_t status)
 {
 	string send_pack = "";
@@ -281,7 +440,7 @@ void Request_3(string OrderCur, string CmdCur,
 	}
 	send_pack += (char)END_PACK;
 
-	sClient.Send(send_pack.c_str(), send_pack.length());
+	pnt->clt.send_data(send_pack.c_str(), send_pack.length());
 }
 
 

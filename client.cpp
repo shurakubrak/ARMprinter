@@ -1,15 +1,14 @@
 #include <iostream>
-#include "client.h"
+#include "includes/client.h"
 
 using namespace std;
 
 #define PER 10	//msec
-extern atomic<bool> Terminated;
 
 // поток чнения для сокета клиента
 void thread_client_read(client_t* arg)
 {
-	while (!arg->conn() && Terminated == false)
+	while (!arg->conn())
 		ssleep(3);
 	while (arg->m_status) 
 	{
@@ -31,7 +30,6 @@ void thread_client_read(client_t* arg)
 
 bool client_t::conn()
 {
-	int err;
 	close_sock();
 
 #ifdef _WIN32

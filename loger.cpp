@@ -1,5 +1,5 @@
 #include <iostream>
-#include "loger.h"
+#include "includes/loger.h"
 
 using namespace std;
 
@@ -86,27 +86,16 @@ string loger_t::log_get_date()
 
 void loger_t::write_to_file_log(log_msg_t *msg)
 {
-	bool retVal = true;
-
 	FILE *p_file;
 	string name_file_to_log = log_get_date() + ".log";
 	p_file = fopen(name_file_to_log.c_str(), "a");
-	if (p_file == nullptr)
-		retVal = false;
-	else
+	if (p_file != nullptr)
 	{
-		try
-		{
-			fprintf(p_file, msg->m_msg.c_str());
-			for (size_t i : msg->m_buf)
-				fprintf(p_file, " x%x", msg->m_buf[i]);
-			fprintf(p_file, en);
-			fclose(p_file);
-		}
-		catch (...)
-		{
-			retVal = false;
-		}
+		fprintf(p_file, msg->m_msg.c_str());
+		for (size_t i : msg->m_buf)
+			fprintf(p_file, " x%x", msg->m_buf[i]);
+		fprintf(p_file, en);
+		fclose(p_file);
 	}
 }
 //------------------------------------------------------------
@@ -143,7 +132,6 @@ pr_log_ls_acc_t loger_t::list_acc(int rw, unique_ptr<log_msg_t> add_msg)
 
 bool loger_t::from_log()
 {
-	bool ret = false;
 	pr_log_ls_acc_t rs = 
 		list_acc(READ, nullptr);
 
@@ -172,7 +160,7 @@ bool loger_t::from_log()
 		case target_log_t::no_target:
 			break;
 		}
-		ret = true;
+		return true;
 	}
 	return false;
 }

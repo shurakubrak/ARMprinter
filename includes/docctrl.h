@@ -1,8 +1,8 @@
 #pragma once
-#include <iostream>
+
 #include <list>
 #include <mutex>
-#include "client.h"
+#include "sock_utils.h"
 
 struct doc_t
 {
@@ -18,7 +18,7 @@ struct doc_t
 	std::string dt = "";
 	std::list<std::string> lines;
 
-	void Clear() {
+	void clear() {
 		order_id = "";
 		cmd_id = "";
 		copies = 0;
@@ -36,12 +36,16 @@ struct doc_t
 class doc_ctrl_t
 {
 public:
-	doc_ctrl_t(){}
-	bool ls_print_acc(doc_t* doc, acc_t acc);
-	static size_t length_str_no_space(std::string str);
+	doc_t m_document;
+	bool m_document_begin = false;
+	doc_ctrl_t() {}
+	bool get_doc(doc_t* doc) { return ls_print_acc(doc, acc_t::get); }
+	void add_doc(doc_t* doc) { ls_print_acc(doc, acc_t::add); }
+	void del_doc() { ls_print_acc(nullptr, acc_t::del); }
+	size_t length_str_no_space(std::string str);
 
 private:
-	std::mutex m_mx_ls_print;
+	std::mutex m_mx_print;
 	std::list<doc_t> m_ls_print;
+	bool ls_print_acc(doc_t* doc, acc_t acc);
 };
-

@@ -1,8 +1,9 @@
 #pragma once
 
 #include <iostream>
-#include <list>
 #include "client.h"
+#include "docctrl.h"
+#include "device.h"
 
 
 #define TIMER_PER_LINE		0.5
@@ -14,32 +15,29 @@
 #define BLINK_TIME			3000
 
 
-
-struct pack_t {
-	char tpe;
-	const char* data;
-	char c;
-};
-
-struct comd_t {
-	char command = 0;
-	std::string data = "";
-	std::string str = "";
-	
-	void copy_to(comd_t* pack) {
-		pack->command = command;
-		pack->data = data;
-		pack->str = str;
+struct printer_t
+{
+	doc_ctrl_t doc;
+	device_t dev;
+	client_t clt;
+	std::atomic<int> count_line_print;
+	std::atomic<int> count_char_print;
+	std::atomic<int> cmd_current;
+	std::atomic<int> order_current;
+	printer_t()
+	{
+		count_line_print.store(0);
+		count_char_print.store(0);
+		cmd_current.store(-1);
+		order_current.store(-1);
 	}
 };
 
 
-
-
 std::string read_addr();
 void cb_analys(char bt, client_t* clt);
-void clt_data_parse(std::vector<char> message);
-void Request_1();
-void Request_2();
-void Request_3(string OrderCur, string CmdCur,
+void clt_data_parse(std::vector<char> message, client_t* clt);
+void request_1(printer_t* pnt);
+void request_2(printer_t* pnt);
+void request_3(printer_t* pnt, std::string OrderCur, std::string CmdCur,
 	int line_num, int char_num, uint8_t status);
